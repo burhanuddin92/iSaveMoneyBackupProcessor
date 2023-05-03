@@ -6,9 +6,9 @@ namespace iSaveMoneyBackupProcessor.DataModels
     {
         public int id { get; set; }
         public string title { get; set; }
-        public float amount { get; set; }
-        public float initial_amount { get; set; }
-        public float spent { get; set; }
+        public double amount { get; set; }
+        public double initial_amount { get; set; }
+        public double spent { get; set; }
         public bool rollover { get; set; }
         public string comment { get; set; }
         public bool active { get; set; }

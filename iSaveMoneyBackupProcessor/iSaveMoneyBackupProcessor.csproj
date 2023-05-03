@@ -58,6 +58,7 @@
     <Compile Include="DataModels\Payee.cs" />
     <Compile Include="DataModels\Payer.cs" />
     <Compile Include="DataModels\RootNode.cs" />
+    <Compile Include="DataModels\Transaction.cs" />
     <Compile Include="DataModels\Transfer.cs" />
     <Compile Include="Main.cs">
       <SubType>Form</SubType>

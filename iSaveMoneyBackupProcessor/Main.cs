@@ -41,74 +41,69 @@ namespace iSaveMoneyBackupProcessor
                 ofd.Multiselect = false;
                 if (ofd.ShowDialog() == DialogResult.OK)
                 {
+                    chkLstAccounts.Items.Clear();
+
                     string text = System.IO.File.ReadAllText(ofd.FileName);
                     txtBkpPath.Text = ofd.FileName;
 
                     bkp = JsonConvert.DeserializeObject<RootNode>(text);
 
-                    foreach (var account in bkp.accounts)
-                    {
-                        chkLstAccounts.Items.Add(account.name);
-                    }
+                    chkLstAccounts.Items.AddRange(bkp.ListAllAccounts().Select(x => x.Name).ToArray());
+
+                    ProcessDataToCsvs(bkp, System.IO.Path.GetDirectoryName(ofd.FileName));
                 }
             }
+        }
+
+        private void ProcessDataToCsvs(RootNode bkp, string path)
+        {
+            List<string> accounts = bkp.ListAllAccounts().Select(x => x.Name).ToList();
+            List<Transaction> allTransactions = new List<Transaction>();
+
+            foreach (var account in accounts)
+            {
+                allTransactions.AddRange(bkp.GetAllTransactionsForAccount(account));
+            }
+
+            allTransactions = allTransactions.OrderByDescending(x => x.Date).ToList();
+
+            string allTransactionText = "Account,Date,Title,Amount,Type,Details" + Environment.NewLine + string.Join(Environment.NewLine, allTransactions);
+            System.IO.File.WriteAllText(System.IO.Path.Combine(path, "AllTransactions.csv"), allTransactionText);
+
+            var allAccounts = allTransactions.GroupBy(x => x.Account, y => y, (x, y) => new
+            {
+                Name = x,
+                TransactionCount = y.Count(),
+                Opening = bkp.accounts.Single(z => z.name == x).balance,
+                TransactionValue = y.Sum(z => z.Amount)
+            }).OrderBy(x => x.Name).Select(x => $"{x.Name},{x.TransactionCount},{x.Opening},{x.TransactionValue},{x.Opening + x.TransactionValue}").ToList();
+
+            string allAccountsText = "Account,Tx Count,Opening,Tx Value,Closing" + Environment.NewLine + string.Join(Environment.NewLine, allAccounts);
+            System.IO.File.WriteAllText(System.IO.Path.Combine(path, "AllAccounts.csv"), allAccountsText);
+
+            var allBudgets = bkp.budgets.Select(x => new
+            {
+                Name = x.comment,
+                StartDate = DateTimeOffset.FromUnixTimeSeconds(x.start_date).DateTime.ToString("dd-MMM-yyyy"),
+                EndDate = DateTimeOffset.FromUnixTimeSeconds(x.end_date).DateTime.ToString("dd-MMM-yyyy"),
+                x.TotalIncome,
+                x.TotalExpense,
+                Difference = x.TotalIncome - x.TotalExpense
+            }).Select(x => $"{x.Name},{x.StartDate},{x.EndDate},{x.TotalIncome},{x.TotalExpense},{x.Difference}").ToList();
+
+            string allBudgetsText = "Name,StartDate,EndDate,TotalIncome,TotalExpense,Difference" + Environment.NewLine + string.Join(Environment.NewLine, allBudgets);
+            System.IO.File.WriteAllText(System.IO.Path.Combine(path, "AllBudgets.csv"), allBudgetsText);
         }
 
         private void chkLstAccounts_ItemCheck(object sender, ItemCheckEventArgs e)
         {
             string account = chkLstAccounts.Items[e.Index].ToString();
-            int accountId = bkp.accounts.Single(x => x.name == account).id;
 
             if (e.NewValue == CheckState.Checked) //if an account is being checked
             {
-                foreach (var transfer in bkp.transfers.Where(x => x.from == accountId))
+                foreach (var transaction in bkp.GetAllTransactionsForAccount(account))
                 {
-                    dgvMain.Rows.Add(
-                        account,
-                        DateTimeOffset.FromUnixTimeSeconds(transfer.transaction_date).DateTime.ToString("dd-MMM-yyyy HH:mm"),
-                        transfer.comment,
-                        -1 * transfer.amount,
-                        "Transfer",
-                        bkp.accounts.Single(x => x.id == transfer.to).name
-                    );
-                }
-
-                foreach (var transfer in bkp.transfers.Where(x => x.to == accountId))
-                {
-                    dgvMain.Rows.Add(
-                        account,
-                        DateTimeOffset.FromUnixTimeSeconds(transfer.transaction_date).DateTime.ToString("dd-MMM-yyyy HH:mm"),
-                        transfer.comment,
-                        transfer.amount,
-                        "Transfer",
-                        bkp.accounts.Single(x => x.id == transfer.from).name
-                    );
-                }
-
-                foreach (var income in bkp.budgets.SelectMany(x => x.incomes).Where(x => x.account_id == accountId))
-                {
-                    dgvMain.Rows.Add(
-                        account,
-                        DateTimeOffset.FromUnixTimeSeconds(income.transaction_date).DateTime.ToString("dd-MMM-yyyy HH:mm"),
-                        income.title,
-                        income.amount,
-                        "Income",
-                        bkp.payers.FirstOrDefault(x => x.id == income.payer_id) == null ? "" : bkp.payers.FirstOrDefault(x => x.id == income.payer_id).name
-                    );
-                }
-
-                var aa = bkp.budgets.SelectMany(x => x.categories).SelectMany(x => x.expenses).ToList();
-
-                foreach (var expense in bkp.budgets.SelectMany(x => x.categories).SelectMany(x => x.expenses).Where(x => x.account.GetType() == typeof(Newtonsoft.Json.Linq.JObject) && ((Newtonsoft.Json.Linq.JObject)(x.account)).ToObject<Account>().id == accountId))
-                {
-                    dgvMain.Rows.Add(
-                        account,
-                        DateTimeOffset.FromUnixTimeSeconds(expense.transaction_date).DateTime.ToString("dd-MMM-yyyy HH:mm"),
-                        expense.title,
-                        -1 * expense.amount,
-                        "Expense",
-                        expense.payee.GetType() == typeof(Newtonsoft.Json.Linq.JObject) ? ((Newtonsoft.Json.Linq.JObject)expense.payee).ToObject<Payee>().name : ""
-                    );
+                    dgvMain.Rows.Add(new string[] { transaction.Account, transaction.Date.ToString("dd-MMM-yyyy"), transaction.Title, transaction.Amount.ToString(), transaction.Type, transaction.Details });
                 }
             }
             else
